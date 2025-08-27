@@ -1,10 +1,13 @@
 package com.ritsu.ai_assistant
 
 import android.content.Context
+import android.Manifest
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -228,21 +231,54 @@ fun LauncherScreen(chatViewModel: ChatViewModel) {
     val apps by chatViewModel.installedApps.collectAsState()
     val context = LocalContext.current
 
+    var hasPermissions by remember {
+        mutableStateOf(false) // Assume no permissions initially
+    }
+
+    val permissions = arrayOf(
+        Manifest.permission.READ_PHONE_STATE,
+        Manifest.permission.RECORD_AUDIO
+    )
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissionsMap ->
+        hasPermissions = permissionsMap.values.all { it }
+    }
+
+    LaunchedEffect(Unit) {
+        launcher.launch(permissions)
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.height(250.dp)) {
-            ConversationView(chatViewModel = chatViewModel)
+        if (hasPermissions) {
+            Box(modifier = Modifier.height(250.dp)) {
+                ConversationView(chatViewModel = chatViewModel)
+            }
+            Button(onClick = {
+                val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
+                intent.putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
+                context.startActivity(intent)
+            }) {
+                Text("Set as Default Phone App")
+            }
+            AppDrawer(
+                apps = apps,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Ritsu needs permissions to function properly.")
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = { launcher.launch(permissions) }) {
+                    Text("Grant Permissions")
+                }
+            }
         }
-        Button(onClick = {
-            val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
-            intent.putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
-            context.startActivity(intent)
-        }) {
-            Text("Set as Default Phone App")
-        }
-        AppDrawer(
-            apps = apps,
-            modifier = Modifier.weight(1f)
-        )
     }
 }
 

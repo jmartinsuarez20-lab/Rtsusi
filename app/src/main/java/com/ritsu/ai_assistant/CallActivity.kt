@@ -14,6 +14,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import gg.gger.llama.cpp.java.bindings.LlamaContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.vosk.Model
 import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
@@ -26,6 +30,10 @@ class CallActivity : ComponentActivity(), RecognitionListener {
     private val TAG = "CallActivity"
     private var model: Model? = null
     private var speechService: SpeechService? = null
+
+    // Placeholder for LLM context. In a real app, this would be injected or retrieved
+    // from a shared component, similar to how ChatViewModel gets it.
+    private var llamaContext: LlamaContext? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,7 +48,9 @@ class CallActivity : ComponentActivity(), RecognitionListener {
             }
         }
 
-        // TODO: Add runtime permission request for RECORD_AUDIO
+        // TODO: This is a placeholder initialization. We need a proper way to access the LLM.
+        // For now, we assume it's magically available for the logic.
+
         initVosk()
     }
 
@@ -57,7 +67,7 @@ class CallActivity : ComponentActivity(), RecognitionListener {
 
     private fun recognizeMicrophone() {
         if (model == null) {
-            Log.e(TAG, "Model not initialized")
+            Log.e(TAG, "Vosk model not initialized")
             return
         }
         try {
@@ -78,27 +88,71 @@ class CallActivity : ComponentActivity(), RecognitionListener {
     // --- RecognitionListener Callbacks ---
 
     override fun onResult(hypothesis: String) {
-        val result = hypothesis // This is the recognized text
-        Log.d(TAG, "Vosk Result: $result")
-        // TODO: Process this result to find commands like "answer" or "hang up"
+        // Vosk returns a JSON string. e.g., { "text": "my command" }
+        // We need to parse the actual text.
+        try {
+            val key = "\"text\""
+            if (hypothesis.contains(key)) {
+                val result = hypothesis.substringAfter(key).split("\"")[1]
+                Log.d(TAG, "Vosk Result: $result")
+                if (result.isNotBlank()) {
+                    parseCommandWithLLM(result)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not parse Vosk result", e)
+        }
     }
 
-    override fun onFinalResult(hypothesis: String) {
-        // Not used for continuous listening
+    private fun parseCommandWithLLM(command: String) {
+        if (llamaContext == null) {
+            Log.e(TAG, "LLM context is null, cannot parse command. Falling back to keyword matching.")
+            // Fallback to simple keyword matching if LLM is not available
+            if (command.contains("contesta", ignoreCase = true) || command.contains("answer", ignoreCase = true)) {
+                CallManager.answer()
+            } else if (command.contains("cuelga", ignoreCase = true) || command.contains("hang up", ignoreCase = true)) {
+                CallManager.hangup()
+            }
+            return
+        }
+
+        val prompt = """
+        From the user's command, identify the action to take. The possible actions are: ANSWER, REJECT, SPEAKER_ON, SPEAKER_OFF, UNKNOWN. Respond with only one of these actions.
+
+        User command: "Cuelga la llamada."
+        Action: REJECT
+
+        User command: "Ok, descuelga, hablo yo."
+        Action: ANSWER
+
+        User command: "Pon el altavoz."
+        Action: SPEAKER_ON
+
+        User command: "$command"
+        Action:
+        """.trimIndent()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val intent = llamaContext?.complete(prompt)?.trim()
+                Log.d(TAG, "LLM Intent: $intent")
+                when (intent) {
+                    "ANSWER" -> CallManager.answer()
+                    "REJECT" -> CallManager.hangup()
+                    "SPEAKER_ON" -> { /* TODO: CallManager.setSpeaker(true) */ }
+                    // Add other cases here
+                    else -> Log.w(TAG, "Unknown intent: $intent")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "LLM intent parsing failed", e)
+            }
+        }
     }
 
-    override fun onPartialResult(hypothesis: String) {
-        // Not used for this implementation
-    }
-
-    override fun onError(e: Exception) {
-        Log.e(TAG, "Vosk Error", e)
-    }
-
-    override fun onTimeout() {
-        // Restart listening if needed
-        speechService?.startListening(this)
-    }
+    override fun onFinalResult(hypothesis: String) { /* Not used */ }
+    override fun onPartialResult(hypothesis: String) { /* Not used */ }
+    override fun onError(e: Exception) { Log.e(TAG, "Vosk Error", e) }
+    override fun onTimeout() { speechService?.startListening(this) }
 }
 
 @Composable
@@ -111,8 +165,8 @@ fun CallScreen() {
         Text(text = "Incoming Call...", style = MaterialTheme.typography.headlineMedium)
         Text(text = "Listening for your command...", style = MaterialTheme.typography.bodyLarge)
 
+        // Buttons can be removed once voice commands are fully trusted
         Spacer(modifier = Modifier.height(100.dp))
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceAround

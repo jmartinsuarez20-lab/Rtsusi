@@ -1,6 +1,7 @@
 package com.ritsu.ai_assistant
 
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,15 +25,15 @@ import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
 import org.vosk.android.StorageService
 import java.io.IOException
+import java.util.Locale
 
-class CallActivity : ComponentActivity(), RecognitionListener {
+class CallActivity : ComponentActivity(), RecognitionListener, TextToSpeech.OnInitListener {
 
     private val TAG = "CallActivity"
     private var model: Model? = null
     private var speechService: SpeechService? = null
+    private var tts: TextToSpeech? = null
 
-    // Placeholder for LLM context. In a real app, this would be injected or retrieved
-    // from a shared component, similar to how ChatViewModel gets it.
     private var llamaContext: LlamaContext? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,9 +49,7 @@ class CallActivity : ComponentActivity(), RecognitionListener {
             }
         }
 
-        // TODO: This is a placeholder initialization. We need a proper way to access the LLM.
-        // For now, we assume it's magically available for the logic.
-
+        tts = TextToSpeech(this, this)
         initVosk()
     }
 
@@ -83,13 +82,31 @@ class CallActivity : ComponentActivity(), RecognitionListener {
         super.onDestroy()
         speechService?.stop()
         speechService?.shutdown()
+        tts?.stop()
+        tts?.shutdown()
+    }
+
+    // --- TextToSpeech.OnInitListener ---
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val result = tts?.setLanguage(Locale("es", "ES"))
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.e(TAG, "The Language specified is not supported!")
+            } else {
+                speak("Llamada entrante. Esperando tu comando.")
+            }
+        } else {
+            Log.e(TAG, "TTS Initialization Failed!")
+        }
+    }
+
+    private fun speak(text: String) {
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "")
     }
 
     // --- RecognitionListener Callbacks ---
 
     override fun onResult(hypothesis: String) {
-        // Vosk returns a JSON string. e.g., { "text": "my command" }
-        // We need to parse the actual text.
         try {
             val key = "\"text\""
             if (hypothesis.contains(key)) {
@@ -107,7 +124,6 @@ class CallActivity : ComponentActivity(), RecognitionListener {
     private fun parseCommandWithLLM(command: String) {
         if (llamaContext == null) {
             Log.e(TAG, "LLM context is null, cannot parse command. Falling back to keyword matching.")
-            // Fallback to simple keyword matching if LLM is not available
             if (command.contains("contesta", ignoreCase = true) || command.contains("answer", ignoreCase = true)) {
                 CallManager.answer()
             } else if (command.contains("cuelga", ignoreCase = true) || command.contains("hang up", ignoreCase = true)) {
@@ -118,16 +134,12 @@ class CallActivity : ComponentActivity(), RecognitionListener {
 
         val prompt = """
         From the user's command, identify the action to take. The possible actions are: ANSWER, REJECT, SPEAKER_ON, SPEAKER_OFF, UNKNOWN. Respond with only one of these actions.
-
         User command: "Cuelga la llamada."
         Action: REJECT
-
         User command: "Ok, descuelga, hablo yo."
         Action: ANSWER
-
         User command: "Pon el altavoz."
         Action: SPEAKER_ON
-
         User command: "$command"
         Action:
         """.trimIndent()
@@ -140,7 +152,6 @@ class CallActivity : ComponentActivity(), RecognitionListener {
                     "ANSWER" -> CallManager.answer()
                     "REJECT" -> CallManager.hangup()
                     "SPEAKER_ON" -> { /* TODO: CallManager.setSpeaker(true) */ }
-                    // Add other cases here
                     else -> Log.w(TAG, "Unknown intent: $intent")
                 }
             } catch (e: Exception) {
@@ -165,7 +176,6 @@ fun CallScreen() {
         Text(text = "Incoming Call...", style = MaterialTheme.typography.headlineMedium)
         Text(text = "Listening for your command...", style = MaterialTheme.typography.bodyLarge)
 
-        // Buttons can be removed once voice commands are fully trusted
         Spacer(modifier = Modifier.height(100.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),

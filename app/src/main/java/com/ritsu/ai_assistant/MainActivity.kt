@@ -5,21 +5,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
-import android.speech.tts.TextToSpeech
 import android.telecom.TelecomManager
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -27,9 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -43,6 +35,7 @@ import coil.compose.rememberAsyncImagePainter
 import com.ritsu.ai_assistant.live2d.LAppLive2DManager
 import com.ritsu.ai_assistant.live2d.LAppPal
 import com.ritsu.ai_assistant.live2d.LAppView
+import com.ritsu.ai_assistant.ui.theme.RitsuAITheme
 import gg.gger.llama.cpp.java.bindings.LlamaContext
 import gg.gger.llama.cpp.java.bindings.LlamaContextParams
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +44,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
-import java.util.*
 
 // --- Data Model ---
 enum class Author {
@@ -277,7 +269,6 @@ fun ConversationView(chatViewModel: ChatViewModel) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.weight(1f)) {
-            // Live2D Avatar
             AndroidView(
                 factory = { context ->
                     LAppView(context).apply {
@@ -290,16 +281,13 @@ fun ConversationView(chatViewModel: ChatViewModel) {
             ) { view ->
                 view.onUpdate()
             }
-
-            // Message list
             LazyColumn(modifier = Modifier.weight(1f).padding(8.dp), reverseLayout = true) {
                 items(messages.reversed()) { message -> MessageBubble(message) }
             }
         }
-        // Input field
         Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextField(
-                value = inputText,
+                value =inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Type a message...") }
@@ -335,12 +323,5 @@ fun MessageBubble(message: ChatMessage) {
 fun ConversationViewPreview() {
     RitsuAITheme {
         Text("Preview for Conversation View")
-    }
-}
-
-@Composable
-fun RitsuAITheme(content: @Composable () -> Unit) {
-    MaterialTheme {
-        content()
     }
 }

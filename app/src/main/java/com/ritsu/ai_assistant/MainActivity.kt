@@ -20,6 +20,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import android.provider.Settings
+import android.telecom.TelecomManager
 import androidx.compose.foundation.Image
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -224,10 +226,18 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LauncherScreen(chatViewModel: ChatViewModel) {
     val apps by chatViewModel.installedApps.collectAsState()
+    val context = LocalContext.current
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.height(250.dp)) {
             ConversationView(chatViewModel = chatViewModel)
+        }
+        Button(onClick = {
+            val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
+            intent.putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
+            context.startActivity(intent)
+        }) {
+            Text("Set as Default Phone App")
         }
         AppDrawer(
             apps = apps,

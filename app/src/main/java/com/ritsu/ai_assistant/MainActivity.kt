@@ -1,6 +1,7 @@
 package com.ritsu.ai_assistant
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,6 +26,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.room.Room
+import coil.compose.rememberAsyncImagePainter
 import gg.gger.llama.cpp.java.bindings.LlamaContext
 import gg.gger.llama.cpp.java.bindings.LlamaContextParams
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +56,9 @@ class ChatViewModel(private val context: Context) : ViewModel() {
     private val _isThinking = MutableStateFlow(false)
     val isThinking = _isThinking.asStateFlow()
 
+    private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
+    val installedApps = _installedApps.asStateFlow()
+
     private var llamaContext: LlamaContext? = null
     private val database: AppDatabase by lazy {
         Room.databaseBuilder(
@@ -64,6 +69,7 @@ class ChatViewModel(private val context: Context) : ViewModel() {
     private val memoryDao by lazy { database.memoryDao() }
 
     init {
+        loadInstalledApps()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val modelPath = getModelPathFromAssets()
@@ -74,6 +80,21 @@ class ChatViewModel(private val context: Context) : ViewModel() {
                 _messages.value = listOf(ChatMessage("Error loading model: ${e.message}", Author.BOT))
             }
         }
+    }
+
+    private fun loadInstalledApps() {
+        val packageManager = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val apps = packageManager.queryIntentActivities(intent, 0)
+        _installedApps.value = apps.map { resolveInfo ->
+            AppInfo(
+                label = resolveInfo.loadLabel(packageManager),
+                packageName = resolveInfo.activityInfo.packageName,
+                icon = resolveInfo.loadIcon(packageManager)
+            )
+        }.sortedBy { it.label.toString() }
     }
 
     private fun getModelPathFromAssets(): String {
@@ -193,7 +214,7 @@ class MainActivity : ComponentActivity() {
                     val chatViewModel: ChatViewModel = viewModel(
                         factory = ChatViewModelFactory(context.applicationContext)
                     )
-                    ChatScreen(chatViewModel)
+                    LauncherScreen(chatViewModel)
                 }
             }
         }
@@ -201,7 +222,22 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun ChatScreen(chatViewModel: ChatViewModel) {
+fun LauncherScreen(chatViewModel: ChatViewModel) {
+    val apps by chatViewModel.installedApps.collectAsState()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.height(250.dp)) {
+            ConversationView(chatViewModel = chatViewModel)
+        }
+        AppDrawer(
+            apps = apps,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+fun ConversationView(chatViewModel: ChatViewModel) {
     val messages by chatViewModel.messages.collectAsState()
     val isThinking by chatViewModel.isThinking.collectAsState()
     var inputText by remember { mutableStateOf("") }
@@ -280,17 +316,11 @@ fun MessageBubble(message: ChatMessage) {
 
 @Preview(showBackground = true)
 @Composable
-fun ChatScreenPreview() {
+fun ConversationViewPreview() {
     RitsuAITheme {
-        // Preview won't have a real viewmodel, so we create a dummy one
-        val dummyMessages = listOf(
-            ChatMessage("Hello!", Author.BOT),
-            ChatMessage("Hi there!", Author.USER)
-        )
         // This is a simplified preview and won't show the input bar correctly
-        LazyColumn {
-            items(dummyMessages) { message -> MessageBubble(message) }
-        }
+        // and the viewmodel is not available.
+        Text("Preview for Conversation View")
     }
 }
 

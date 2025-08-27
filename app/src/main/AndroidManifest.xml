@@ -30,6 +30,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".CallActivity"
+            android:exported="false" />
 
         <receiver
             android:name=".CallBroadcastReceiver"

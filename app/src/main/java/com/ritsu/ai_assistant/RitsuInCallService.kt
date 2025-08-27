@@ -13,11 +13,15 @@ class RitsuInCallService : InCallService() {
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
         Log.d(TAG, "Call Added: $call")
-        // Here we would launch our own call UI
+        CallManager.onCallAdded(call)
+        val intent = Intent(this, CallActivity::class.java)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
     }
 
     override fun onCallRemoved(call: Call) {
         super.onCallRemoved(call)
         Log.d(TAG, "Call Removed: $call")
+        CallManager.onCallRemoved()
     }
 }

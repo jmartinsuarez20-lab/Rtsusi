@@ -19,8 +19,7 @@
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_ritsu_placeholder"
         android:supportsRtl="true"
-        android:theme="@style/Theme.RitsuAIAssistant"
-        tools:targetApi="31">
+        android:theme="@style/Theme.RitsuAIAssistant">
         <activity
             android:name=".MainActivity"
             android:exported="true"

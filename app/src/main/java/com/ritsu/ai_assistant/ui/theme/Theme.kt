@@ -57,7 +57,7 @@ fun RitsuAITheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography, // We will create this file next
+        typography = Typography,
         content = content
     )
 }

@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.telecom.TelecomManager
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -196,21 +195,9 @@ class ChatViewModelFactory(private val context: Context) : ViewModelProvider.Fac
 
 // --- UI ---
 class MainActivity : ComponentActivity() {
-
-    private lateinit var hotwordDetector: HotwordDetector
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LAppPal.initialize(this)
-
-        hotwordDetector = HotwordDetector(this) {
-            // This is the callback when "hey ritsu" is detected
-            runOnUiThread {
-                Toast.makeText(this, "Ritsu is listening...", Toast.LENGTH_SHORT).show()
-                // Here we would trigger the main Vosk recognizer
-            }
-        }
-
         setContent {
             RitsuAITheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -218,7 +205,7 @@ class MainActivity : ComponentActivity() {
                     val chatViewModel: ChatViewModel = viewModel(
                         factory = ChatViewModelFactory(context.applicationContext)
                     )
-                    LauncherScreen(chatViewModel, hotwordDetector)
+                    LauncherScreen(chatViewModel)
                 }
             }
         }
@@ -226,12 +213,11 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         LAppPal.release()
-        hotwordDetector.destroy()
     }
 }
 
 @Composable
-fun LauncherScreen(chatViewModel: ChatViewModel, hotwordDetector: HotwordDetector) {
+fun LauncherScreen(chatViewModel: ChatViewModel) {
     val apps by chatViewModel.installedApps.collectAsState()
     val context = LocalContext.current
     var hasPermissions by remember { mutableStateOf(false) }
@@ -239,11 +225,7 @@ fun LauncherScreen(chatViewModel: ChatViewModel, hotwordDetector: HotwordDetecto
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissionsMap ->
-        val allGranted = permissionsMap.values.all { it }
-        hasPermissions = allGranted
-        if (allGranted) {
-            hotwordDetector.startListening()
-        }
+        hasPermissions = permissionsMap.values.all { it }
     }
     LaunchedEffect(Unit) {
         launcher.launch(permissions)
@@ -308,7 +290,7 @@ fun ConversationView(chatViewModel: ChatViewModel) {
                 value =inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Type a message...") }
+                placeholder = { Text("Or type a message...") }
             )
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {

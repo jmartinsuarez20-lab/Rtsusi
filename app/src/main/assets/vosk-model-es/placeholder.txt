@@ -1,0 +1,1 @@
+This is a placeholder for the Vosk speech recognition model files.

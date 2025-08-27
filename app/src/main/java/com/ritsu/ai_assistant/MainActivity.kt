@@ -262,6 +262,12 @@ fun LauncherScreen(chatViewModel: ChatViewModel) {
             }) {
                 Text("Set as Default Phone App")
             }
+        Button(onClick = {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            context.startActivity(intent)
+        }) {
+            Text("Enable Messaging Service")
+        }
             AppDrawer(
                 apps = apps,
                 modifier = Modifier.weight(1f)

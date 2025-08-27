@@ -3,9 +3,15 @@ package com.ritsu.ai_assistant
 import android.util.Log
 
 /**
- * A placeholder class to manage Live2D animations.
- * In a real implementation, this class would interact with the LAppLive2DManager
- * to start and stop motions and expressions on the Live2D model.
+ * A placeholder singleton to manage Live2D animations.
+ *
+ * This class provides a clean interface for other parts of the app (like ViewModels)
+ * to request animation changes (e.g., "start speaking," "start thinking"). It is
+ * decoupled from the core Live2D implementation.
+ *
+ * In a real implementation, the methods of this class would call the actual
+ * Live2D SDK functions to start and stop motions and expressions on the model.
+ * The current version only logs the requested actions.
  */
 class AnimationManager {
 

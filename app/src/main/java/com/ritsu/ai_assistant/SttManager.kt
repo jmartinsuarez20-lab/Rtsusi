@@ -9,6 +9,12 @@ import org.vosk.android.SpeechService
 import org.vosk.android.StorageService
 import java.io.IOException
 
+/**
+ * Manages the main Speech-to-Text (STT) functionality using the Vosk library.
+ * This class is responsible for listening to the device's microphone after the
+ * hotword is detected, and returning the recognized text. It provides callbacks
+ * for results and listening status changes.
+ */
 class SttManager(
     private val context: Context,
     private val onResult: (String) -> Unit,

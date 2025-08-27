@@ -89,7 +89,6 @@ class ChatViewModel(private val context: Context) : ViewModel() {
     private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val installedApps = _installedApps.asStateFlow()
 
-    private var llamaContext: LlamaContext? = null
     private val animationManager: AnimationManager = AnimationManager.getInstance()
     private val ttsManager: TtsManager by lazy {
         TtsManager(
@@ -109,16 +108,14 @@ class ChatViewModel(private val context: Context) : ViewModel() {
     init {
         loadInstalledApps()
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val modelPath = getModelPathFromAssets()
-                val params = LlamaContextParams()
-                llamaContext = LlamaContext(modelPath, params)
+            LlamaManager.init(context)
+            if (LlamaManager.get() != null) {
                 val initialMessage = "Hello! I am Ritsu. I can learn from our conversation. How can I help you?"
                 _messages.value = listOf(ChatMessage(initialMessage, Author.BOT))
                 ttsManager.speak(initialMessage)
                 animationManager.startMotion(AnimationManager.Motion.IDLE)
-            } catch (e: Exception) {
-                _messages.value = listOf(ChatMessage("Error loading model: ${e.message}", Author.BOT))
+            } else {
+                _messages.value = listOf(ChatMessage("Error loading AI model.", Author.BOT))
             }
         }
 
@@ -148,20 +145,8 @@ class ChatViewModel(private val context: Context) : ViewModel() {
         }.sortedBy { it.label.toString() }
     }
 
-    private fun getModelPathFromAssets(): String {
-        val modelName = "ritsu_model.gguf"
-        val modelFile = File(context.filesDir, modelName)
-        if (!modelFile.exists()) {
-            context.assets.open(modelName).use { inputStream ->
-                FileOutputStream(modelFile).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-            }
-        }
-        return modelFile.absolutePath
-    }
-
     fun sendMessage(text: String) {
+        val llamaContext = LlamaManager.get()
         if (llamaContext == null) {
             _messages.value = _messages.value + ChatMessage("Model is not ready yet.", Author.BOT)
             return
@@ -181,7 +166,7 @@ class ChatViewModel(private val context: Context) : ViewModel() {
                     Message: "$text"
                     Sentiment:
                 """.trimIndent()
-                val sentiment = llamaContext?.complete(sentimentPrompt)?.trim()?.uppercase() ?: "NEUTRAL"
+                val sentiment = llamaContext.complete(sentimentPrompt)?.trim()?.uppercase() ?: "NEUTRAL"
 
                 // Step 2: Learn new facts (can run in parallel)
                 learnNewFact(text)
@@ -209,7 +194,7 @@ class ChatViewModel(private val context: Context) : ViewModel() {
                 Assistant:
                 """.trimIndent()
 
-                val response = llamaContext?.complete(responsePrompt) ?: "Sorry, I could not generate a response."
+                val response = llamaContext.complete(responsePrompt) ?: "Sorry, I could not generate a response."
                 _messages.value = _messages.value.dropLast(1) + ChatMessage(response, Author.BOT)
                 ttsManager.speak(response)
 
@@ -224,6 +209,7 @@ class ChatViewModel(private val context: Context) : ViewModel() {
     }
 
     private suspend fun learnNewFact(userInput: String) {
+        val llamaContext = LlamaManager.get() ?: return
         val factExtractionPrompt = """
         From the following user statement, extract one key fact to remember for the future as a short sentence. If no important fact is present, respond with only the word "NONE".
         Examples:
@@ -237,7 +223,7 @@ class ChatViewModel(private val context: Context) : ViewModel() {
         Fact:
         """.trimIndent()
         try {
-            val potentialFact = llamaContext?.complete(factExtractionPrompt)?.trim()
+            val potentialFact = llamaContext.complete(factExtractionPrompt)?.trim()
             if (!potentialFact.isNullOrBlank() && !potentialFact.equals("NONE", ignoreCase = true)) {
                 memoryDao.insert(Memory(fact = potentialFact))
             }
@@ -246,7 +232,7 @@ class ChatViewModel(private val context: Context) : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        llamaContext?.close()
+        LlamaManager.close()
         ttsManager.shutdown()
         database.close()
     }

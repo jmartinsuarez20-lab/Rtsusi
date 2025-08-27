@@ -6,6 +6,13 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import java.util.Locale
 
+/**
+ * Manages Text-to-Speech (TTS) functionality for the application.
+ * This class encapsulates the Android TextToSpeech engine, handles its
+ * initialization, and provides a simple interface for speaking text.
+ * It also includes callbacks for when speech starts and stops, which can be
+ * used to trigger animations.
+ */
 class TtsManager(
     context: Context,
     private val onSpeechStarted: () -> Unit,

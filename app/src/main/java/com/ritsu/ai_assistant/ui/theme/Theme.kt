@@ -7,6 +7,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -14,8 +15,8 @@ import androidx.core.view.WindowCompat
 private val DarkColorScheme = darkColorScheme(
     primary = Pink80,
     secondary = LightBlue80,
-    background = Color(0xFF121212),
-    surface = Color(0xFF121212),
+    background = Color.Transparent,
+    surface = Color(0xAA121212), // Semi-transparent surface for cards
     onPrimary = Black80,
     onSecondary = Black80,
     onBackground = White80,
@@ -27,8 +28,8 @@ private val DarkColorScheme = darkColorScheme(
 private val LightColorScheme = lightColorScheme(
     primary = Pink40,
     secondary = LightBlue40,
-    background = Color(0xFFF0F0F0),
-    surface = White40,
+    background = Color.Transparent,
+    surface = Color(0xCCFFFFFF), // Semi-transparent white surface
     onPrimary = White40,
     onSecondary = White40,
     onBackground = Black40,

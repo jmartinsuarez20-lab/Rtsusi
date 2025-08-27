@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Ritsu AI Assistant</string>
+    <string name="accessibility_service_label">Ritsu AI Messaging Service</string>
+</resources>

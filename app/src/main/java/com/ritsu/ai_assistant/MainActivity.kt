@@ -1,19 +1,28 @@
 package com.ritsu.ai_assistant
 
-import android.content.Context
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
+import android.speech.tts.TextToSpeech
+import android.telecom.TelecomManager
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,17 +30,19 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import android.provider.Settings
-import android.telecom.TelecomManager
-import androidx.compose.foundation.Image
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.room.Room
 import coil.compose.rememberAsyncImagePainter
+import com.ritsu.ai_assistant.live2d.LAppLive2DManager
+import com.ritsu.ai_assistant.live2d.LAppPal
+import com.ritsu.ai_assistant.live2d.LAppView
 import gg.gger.llama.cpp.java.bindings.LlamaContext
 import gg.gger.llama.cpp.java.bindings.LlamaContextParams
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +51,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.util.*
 
 // --- Data Model ---
 enum class Author {
@@ -129,28 +141,19 @@ class ChatViewModel(private val context: Context) : ViewModel() {
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // 1. Learn from user's message
                 learnNewFact(text)
+                val memories = memoryDao.getAllMemoriesList()
+                val memoryContext = if (memories.isNotEmpty()) {
+                    "You remember these facts about the user:\n" + memories.joinToString("\n") { "- ${it.fact}" }
+                } else { "" }
 
-                // 2. Retrieve memories
-            val memories = memoryDao.getAllMemoriesList()
-            val memoryContext = if (memories.isNotEmpty()) {
-                "You remember these facts about the user:\n" + memories.joinToString("\n") { "- ${it.fact}" }
-            } else {
-                ""
-            }
-
-            // 3. Generate response with memory context
-            try {
                 val prompt = """
                 $memoryContext
-
                 Current conversation:
                 User: $text
                 Assistant:
                 """.trimIndent()
                 val response = llamaContext?.complete(prompt) ?: "Sorry, I could not generate a response."
-
                 _messages.value = _messages.value.dropLast(1) + ChatMessage(response, Author.BOT)
             } catch (e: Exception) {
                 _messages.value = _messages.value.dropLast(1) + ChatMessage("Error: ${e.message}", Author.BOT)
@@ -163,29 +166,22 @@ class ChatViewModel(private val context: Context) : ViewModel() {
     private suspend fun learnNewFact(userInput: String) {
         val factExtractionPrompt = """
         From the following user statement, extract one key fact to remember for the future as a short sentence. If no important fact is present, respond with only the word "NONE".
-
         Examples:
         User statement: "My favorite color is blue."
         Fact: User's favorite color is blue.
-
         User statement: "I live in Paris."
         Fact: User lives in Paris.
-
         User statement: "ok that sounds good"
         Fact: NONE
-
         User statement: "$userInput"
         Fact:
         """.trimIndent()
-
         try {
             val potentialFact = llamaContext?.complete(factExtractionPrompt)?.trim()
             if (!potentialFact.isNullOrBlank() && !potentialFact.equals("NONE", ignoreCase = true)) {
                 memoryDao.insert(Memory(fact = potentialFact))
             }
-        } catch (e: Exception) {
-            // Failed to extract a fact, which is fine.
-        }
+        } catch (e: Exception) { /* Failed to extract a fact, which is fine. */ }
     }
 
     override fun onCleared() {
@@ -195,7 +191,6 @@ class ChatViewModel(private val context: Context) : ViewModel() {
     }
 }
 
-// ViewModel Factory to pass context
 class ChatViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
@@ -206,12 +201,11 @@ class ChatViewModelFactory(private val context: Context) : ViewModelProvider.Fac
     }
 }
 
-
 // --- UI ---
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LAppPal.initialize(this)
         setContent {
             RitsuAITheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -224,28 +218,23 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    override fun onDestroy() {
+        super.onDestroy()
+        LAppPal.release()
+    }
 }
 
 @Composable
 fun LauncherScreen(chatViewModel: ChatViewModel) {
     val apps by chatViewModel.installedApps.collectAsState()
     val context = LocalContext.current
-
-    var hasPermissions by remember {
-        mutableStateOf(false) // Assume no permissions initially
-    }
-
-    val permissions = arrayOf(
-        Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.RECORD_AUDIO
-    )
-
+    var hasPermissions by remember { mutableStateOf(false) }
+    val permissions = arrayOf(Manifest.permission.READ_PHONE_STATE, Manifest.permission.RECORD_AUDIO)
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissionsMap ->
         hasPermissions = permissionsMap.values.all { it }
     }
-
     LaunchedEffect(Unit) {
         launcher.launch(permissions)
     }
@@ -259,19 +248,12 @@ fun LauncherScreen(chatViewModel: ChatViewModel) {
                 val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
                 intent.putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
                 context.startActivity(intent)
-            }) {
-                Text("Set as Default Phone App")
-            }
-        Button(onClick = {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            context.startActivity(intent)
-        }) {
-            Text("Enable Messaging Service")
-        }
-            AppDrawer(
-                apps = apps,
-                modifier = Modifier.weight(1f)
-            )
+            }) { Text("Set as Default Phone App") }
+            Button(onClick = {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                context.startActivity(intent)
+            }) { Text("Enable Messaging Service") }
+            AppDrawer(apps = apps, modifier = Modifier.weight(1f))
         } else {
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -280,9 +262,7 @@ fun LauncherScreen(chatViewModel: ChatViewModel) {
             ) {
                 Text("Ritsu needs permissions to function properly.")
                 Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = { launcher.launch(permissions) }) {
-                    Text("Grant Permissions")
-                }
+                Button(onClick = { launcher.launch(permissions) }) { Text("Grant Permissions") }
             }
         }
     }
@@ -293,38 +273,31 @@ fun ConversationView(chatViewModel: ChatViewModel) {
     val messages by chatViewModel.messages.collectAsState()
     val isThinking by chatViewModel.isThinking.collectAsState()
     var inputText by remember { mutableStateOf("") }
-
     val avatarAlpha by animateFloatAsState(targetValue = if (isThinking) 0.5f else 1.0f, label = "avatarAlpha")
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.weight(1f)) {
-            // Avatar
-            Image(
-                painter = painterResource(id = R.drawable.ic_ritsu_placeholder),
-                contentDescription = "Ritsu Avatar",
+            // Live2D Avatar
+            AndroidView(
+                factory = { context ->
+                    LAppView(context).apply {
+                        LAppLive2DManager.getInstance().changeScene("haru")
+                    }
+                },
                 modifier = Modifier
-                    .size(100.dp)
-                    .padding(8.dp)
-                    .align(Alignment.CenterVertically)
+                    .size(200.dp)
                     .alpha(avatarAlpha)
-            )
+            ) { view ->
+                view.onUpdate()
+            }
 
             // Message list
-            LazyColumn(
-                modifier = Modifier.weight(1f).padding(8.dp),
-                reverseLayout = true
-            ) {
-                items(messages.reversed()) { message ->
-                    MessageBubble(message)
-                }
+            LazyColumn(modifier = Modifier.weight(1f).padding(8.dp), reverseLayout = true) {
+                items(messages.reversed()) { message -> MessageBubble(message) }
             }
         }
-
         // Input field
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextField(
                 value = inputText,
                 onValueChange = { inputText = it },
@@ -337,9 +310,7 @@ fun ConversationView(chatViewModel: ChatViewModel) {
                     chatViewModel.sendMessage(inputText)
                     inputText = ""
                 }
-            }) {
-                Text("Send")
-            }
+            }) { Text("Send") }
         }
     }
 }
@@ -349,19 +320,12 @@ fun MessageBubble(message: ChatMessage) {
     val horizontalArrangement = if (message.author == Author.USER) Arrangement.End else Arrangement.Start
     val bubbleColor = if (message.author == Author.USER) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
 
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = horizontalArrangement
-    ) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = horizontalArrangement) {
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = bubbleColor)
         ) {
-            Text(
-                text = message.text,
-                modifier = Modifier.padding(12.dp),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Text(text = message.text, modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -370,8 +334,6 @@ fun MessageBubble(message: ChatMessage) {
 @Composable
 fun ConversationViewPreview() {
     RitsuAITheme {
-        // This is a simplified preview and won't show the input bar correctly
-        // and the viewmodel is not available.
         Text("Preview for Conversation View")
     }
 }

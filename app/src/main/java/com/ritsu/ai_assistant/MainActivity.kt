@@ -9,13 +9,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -46,6 +50,9 @@ class ChatViewModel(private val context: Context) : ViewModel() {
         mutableListOf(ChatMessage("Model is loading... please wait.", Author.BOT))
     )
     val messages = _messages.asStateFlow()
+
+    private val _isThinking = MutableStateFlow(false)
+    val isThinking = _isThinking.asStateFlow()
 
     private var llamaContext: LlamaContext? = null
     private val database: AppDatabase by lazy {
@@ -92,12 +99,14 @@ class ChatViewModel(private val context: Context) : ViewModel() {
         _messages.value = _messages.value + userMessage
         val thinkingMessage = ChatMessage("...", Author.BOT)
         _messages.value = _messages.value + thinkingMessage
+        _isThinking.value = true
 
         viewModelScope.launch(Dispatchers.IO) {
-            // 1. Learn from user's message
-            learnNewFact(text)
+            try {
+                // 1. Learn from user's message
+                learnNewFact(text)
 
-            // 2. Retrieve memories
+                // 2. Retrieve memories
             val memories = memoryDao.getAllMemoriesList()
             val memoryContext = if (memories.isNotEmpty()) {
                 "You remember these facts about the user:\n" + memories.joinToString("\n") { "- ${it.fact}" }
@@ -119,6 +128,8 @@ class ChatViewModel(private val context: Context) : ViewModel() {
                 _messages.value = _messages.value.dropLast(1) + ChatMessage(response, Author.BOT)
             } catch (e: Exception) {
                 _messages.value = _messages.value.dropLast(1) + ChatMessage("Error: ${e.message}", Author.BOT)
+            } finally {
+                _isThinking.value = false
             }
         }
     }
@@ -192,18 +203,36 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ChatScreen(chatViewModel: ChatViewModel) {
     val messages by chatViewModel.messages.collectAsState()
+    val isThinking by chatViewModel.isThinking.collectAsState()
     var inputText by remember { mutableStateOf("") }
 
+    val avatarAlpha by animateFloatAsState(targetValue = if (isThinking) 0.5f else 1.0f, label = "avatarAlpha")
+
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.weight(1f).padding(8.dp),
-            reverseLayout = true
-        ) {
-            items(messages.reversed()) { message ->
-                MessageBubble(message)
+        Row(modifier = Modifier.weight(1f)) {
+            // Avatar
+            Image(
+                painter = painterResource(id = R.drawable.ic_ritsu_placeholder),
+                contentDescription = "Ritsu Avatar",
+                modifier = Modifier
+                    .size(100.dp)
+                    .padding(8.dp)
+                    .align(Alignment.CenterVertically)
+                    .alpha(avatarAlpha)
+            )
+
+            // Message list
+            LazyColumn(
+                modifier = Modifier.weight(1f).padding(8.dp),
+                reverseLayout = true
+            ) {
+                items(messages.reversed()) { message ->
+                    MessageBubble(message)
+                }
             }
         }
 
+        // Input field
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically

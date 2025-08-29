@@ -2,14 +2,11 @@ package com.ritsu.ai_assistant
 
 import android.content.Context
 import android.util.Log
-import edu.cmu.pocketsphinx.Assets
-import edu.cmu.pocketsphinx.Hypothesis
-import edu.cmu.pocketsphinx.RecognitionListener
-import edu.cmu.pocketsphinx.SpeechRecognizer
-import edu.cmu.pocketsphinx.SpeechRecognizerSetup
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import java.io.File
+import org.vosk.Model
+import org.vosk.Recognizer
+import org.vosk.android.RecognitionListener
+import org.vosk.android.SpeechService
+import org.vosk.android.StorageService
 import java.io.IOException
 
 class HotwordDetector(
@@ -18,78 +15,80 @@ class HotwordDetector(
 ) : RecognitionListener {
 
     private val TAG = "HotwordDetector"
-    private var speechRecognizer: SpeechRecognizer? = null
+    private var model: Model? = null
+    private var speechService: SpeechService? = null
 
-    fun setup() {
+    init {
+        // Model loading should be done off the main thread.
+        // For simplicity, we do it here, but in a real app, use a background thread.
         try {
-            val assets = Assets(context)
-            val assetDir = assets.syncAssets()
-            val setup = SpeechRecognizerSetup.defaultSetup()
-                .setAcousticModel(File(assetDir, "en-us-ptm"))
-                .setDictionary(File(assetDir, "cmudict-en-us.dict"))
-                //.setRawLogDir(assetDir) // Optional for debugging
-                .setKeywordThreshold(1e-45f)
-
-            speechRecognizer = setup.recognizer
-            speechRecognizer?.addListener(this)
-
-            // Create a search file for the keyword
-            val keywordFile = File(assetDir, "keywords.txt")
-            // The keyword file should be in the assets, let's assume it is.
-            // In a real app, we would generate this or ensure it's in the sync dir.
-            speechRecognizer?.addKeywordSearch("HOTWORD", File(assetDir, "models/keywords.txt"))
-
+            StorageService.unpack(context, "model-en-us", "model",
+                { model ->
+                    this.model = model
+                },
+                { exception ->
+                    Log.e(TAG, "Failed to unpack model", exception)
+                })
         } catch (e: IOException) {
-            Log.e(TAG, "Failed to set up PocketSphinx", e)
+            Log.e(TAG, "Failed to unpack model", e)
         }
     }
 
     fun startListening() {
-        if (speechRecognizer == null) setup()
-        speechRecognizer?.startListening("HOTWORD")
-        Log.d(TAG, "PocketSphinx is listening for 'hey ritsu'")
+        if (model == null) {
+            Log.e(TAG, "Model not loaded yet, cannot start listening.")
+            return
+        }
+        try {
+            // The recognizer should be created with a specific grammar for the hotword
+            // For Vosk, you provide a JSON string of accepted phrases.
+            val recognizer = Recognizer(model, 16000.0f, "[\"hey ritsu\"]")
+            speechService = SpeechService(recognizer, 16000.0f)
+            speechService?.startListening(this)
+            Log.d(TAG, "Vosk is listening for 'hey ritsu'")
+        } catch (e: IOException) {
+            Log.e(TAG, "Error starting Vosk listener", e)
+        }
     }
 
     fun stopListening() {
-        speechRecognizer?.stop()
-        Log.d(TAG, "PocketSphinx has stopped listening")
+        speechService?.stop()
+        speechService = null
+        Log.d(TAG, "Vosk has stopped listening")
     }
 
     fun destroy() {
-        speechRecognizer?.cancel()
-        speechRecognizer?.shutdown()
+        speechService?.stop()
+        speechService?.shutdown()
+        model = null // Vosk models are not explicitly closed
     }
 
-    override fun onBeginningOfSpeech() {
-        // Not used for keyword spotting
-    }
-
-    override fun onEndOfSpeech() {
-        // Restart listening after speech ends
-        speechRecognizer?.startListening("HOTWORD", 10000)
-    }
-
-    override fun onPartialResult(hypothesis: Hypothesis?) {
+    override fun onPartialResult(hypothesis: String?) {
+        // In keyword spotting mode, we often get the result in onPartialResult
         hypothesis?.let {
-            val text = it.hypstr
-            if (text == "hey ritsu") {
+            if (it.contains("hey ritsu")) {
                 Log.d(TAG, "Hotword 'hey ritsu' detected!")
                 onHotwordDetected()
-                // Stop listening for hotword to let main STT take over
-                speechRecognizer?.stop()
+                // Stop listening for the hotword to let the main STT take over
+                stopListening()
             }
         }
     }
 
-    override fun onResult(hypothesis: Hypothesis?) {
-        // Not used for keyword spotting
+    override fun onResult(hypothesis: String?) {
+        // Final result, can also be used
     }
 
-    override fun onError(error: Exception?) {
-        Log.e(TAG, "PocketSphinx error", error)
+    override fun onFinalResult(hypothesis: String?) {
+        // Not typically used for continuous keyword spotting
+    }
+
+    override fun onError(exception: Exception?) {
+        Log.e(TAG, "Vosk recognition error", exception)
+        // May need to restart listening after an error
     }
 
     override fun onTimeout() {
-        speechRecognizer?.startListening("HOTWORD")
+        // Can be used to restart listening
     }
 }

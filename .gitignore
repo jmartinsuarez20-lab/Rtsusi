@@ -1,0 +1,20 @@
+# Created by Studio Bot
+
+# Folders containing generated files
+.gradle/
+build/
+app/build/
+app/.cxx/
+
+# Local configuration files
+*.iml
+.idea/
+local.properties
+gradle.properties
+
+# Log files and heap dumps
+*.hprof
+
+# Large asset files that should not be in Git
+*.gguf
+app/src/main/assets/vosk-model-es/
